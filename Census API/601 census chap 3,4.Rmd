@@ -1,0 +1,446 @@
+---
+title: "601 excercises 3, 4"
+output: html_document
+date: "2023-11-01"
+---
+
+```{r setup, include=FALSE}
+library(tidycensus)
+library(tidyverse)
+install.packages("ggridges")
+install.packages("ggbeeswarm")
+install.packages("geofacet")
+library(plotly)
+```
+##chapter little tidbits
+```{r}
+#default
+median_age <- get_acs(
+  geography = "county",
+  variables = "B01002_001",
+  year = 2020
+)
+
+#view in asc order of a given colmun
+arrange(median_age, estimate)
+#desc order
+arrange(median_age, desc(estimate))
+#filter by a specific value
+filter(median_age, estimate >= 50)
+#seperates name column into two columsn
+separate(
+  median_age,
+  NAME,
+  into = c("county", "state"),
+  sep = ", "
+)
+#normalized summary vars
+#different counties have different populations, we can normalize to compare them,
+#this example uses race and normalizes total number of hosuegolds as the sumamry, so you know how many residents are in each county, then proption of races
+race_vars <- c(
+  White = "B03002_003",
+  Black = "B03002_004",
+  Native = "B03002_005",
+  Asian = "B03002_006",
+  HIPI = "B03002_007",
+  Hispanic = "B03002_012"
+)
+
+az_race <- get_acs(
+  geography = "county",
+  state = "AZ",
+  variables = race_vars,
+  summary_var = "B03002_001",
+  year = 2020
+) 
+
+#this function makes the proportion a percentage
+
+az_race_percent <- az_race %>%
+  mutate(percent = 100 * (estimate / summary_est)) %>%
+  select(NAME, variable, percent)
+
+
+#this function selects unqiue rows in a column and sorts by them
+largest_group <- az_race_percent %>%
+  group_by(NAME) %>%
+  filter(percent == max(percent))
+#this function condenses the data further with a summarize function
+az_race_percent %>%
+  group_by(variable) %>%
+  summarize(median_pct = median(percent))
+
+#mutate function
+mn_hh_income <- get_acs(
+  geography = "county",
+  table = "B19001",
+  state = "MN",
+  year = 2016
+)
+#this function looks complicated, but basically removes the 001 vars which is a totoal of all households
+#then it uses case when to definse that when the variable si between 002and008 it falls in the under 35k value
+#then it does the same thing again for 008-0013, and all values above are above 75k
+#its like the cute function in poliscidata
+mn_hh_income_recode <- mn_hh_income %>%
+  filter(variable != "B19001_001") %>%
+  mutate(incgroup = case_when(
+    variable < "B19001_008" ~ "below35k", 
+    variable < "B19001_013" ~ "bw35kand75k", 
+    TRUE ~ "above75k"
+  )) 
+#this group by shows are new income group sums
+mn_group_sums <- mn_hh_income_recode %>%
+  group_by(GEOID, incgroup) %>%
+  summarize(estimate = sum(estimate))
+
+
+
+
+##########EXEC CHAP 3
+ex1bach <- get_acs(
+  geography = "county",
+  state = "Virginia",
+  variable="DP02_0068P",
+  year = 2019
+) 
+
+
+arrange(ex1bach, estimate)
+arrange(ex1bach, desc(estimate))
+ex1bach%>%
+  summarize(medianperc=median(estimate))
+```
+
+
+```{r} 
+#chap 4
+library(tidycensus)
+
+ga_wide <- get_acs(
+  geography = "county",
+  state = "Georgia",
+  variables = c(medinc = "B19013_001",
+                medage = "B01002_001"),
+  output = "wide",
+  year = 2020
+)
+
+#good for census, accounts for scientific notation
+options(scipen = 999)
+
+#histograms
+ggplot(ga_wide, aes(x = medincE)) + 
+  geom_histogram()
+
+g <- ggplot(ga_wide, aes(x = medincE)) + 
+  geom_histogram(bins = 15)
+g
+
+#box plot
+ggplot(ga_wide, aes(y = medincE)) + 
+  geom_boxplot()
+#multivariate plot/ scatterplot
+
+ggplot(ga_wide, aes(x = medageE, y = medincE)) + 
+  geom_point()
+#linear line of best fit
+ggplot(ga_wide, aes(x = medageE, y = medincE)) + 
+  geom_point() + 
+  geom_smooth(method = "lm")
+
+
+#finds people commuting to work in major metro areas
+metros <-  get_acs(
+  geography = "cbsa",
+  variables = "DP03_0021P",
+  summary_var = "B01003_001",
+  survey = "acs1",
+  year = 2019
+) %>%
+  slice_max(summary_est, n = 20)
+
+ggplot(metros, aes(x = NAME, y = estimate)) + 
+  geom_col()
+#this fixes x axis labels
+metros %>%
+  mutate(NAME = str_remove(NAME, "-.*$")) %>%
+  mutate(NAME = str_remove(NAME, ",.*$")) %>%
+  ggplot(aes(y = reorder(NAME, estimate), x = estimate)) + 
+  geom_col() +  
+  theme_minimal() + 
+  labs(title = "Public transit commute share", 
+       subtitle = "2019 1-year ACS estimates", 
+       y = "", 
+       x = "ACS estimate", 
+       caption = "Source: ACS Data Profile variable DP03_0021P via the tidycensus R package") 
+
+#save your output as an image
+ggsave(
+  filename = "metro_transit.png",
+  path = "~/images",
+  width = 8,
+  height = 5,
+  units = "in",
+  dpi = 300
+)
+
+maine <- get_decennial(
+  state = "Maine",
+  geography = "county",
+  variables = c(totalpop = "P1_001N"),
+  year = 2020
+) %>%
+  arrange(desc(value))
+#cleans up the naming of counties
+maine_income <- get_acs(
+  state = "Maine",
+  geography = "county",
+  variables = c(hhincome = "B19013_001"),
+  year = 2020
+) %>%
+  mutate(NAME = str_remove(NAME, " County, Maine"))
+
+#plot of median household income in Maine by county   
+
+ggplot(maine_income, aes(x = estimate, y = reorder(NAME, estimate))) + 
+  geom_point(size = 3, color = "darkgreen") + 
+  labs(title = "Median household income", 
+       subtitle = "Counties in Maine", 
+       x = "", 
+       y = "ACS estimate") + 
+  theme_minimal(base_size = 12.5) 
+maine_income %>% 
+  arrange(desc(moe))
+#adding in margin of error bars
+ggplot(maine_income, aes(x = estimate, y = reorder(NAME, estimate))) + 
+  geom_errorbarh(aes(xmin = estimate - moe, xmax = estimate + moe)) + 
+  geom_point(size = 3, color = "darkgreen") + 
+  theme_minimal(base_size = 12.5) + 
+  labs(title = "Median household income", 
+       subtitle = "Counties in Maine", 
+       x = "2016-2020 ACS estimate", 
+       y = "")
+
+
+
+
+
+
+###data over time in ggplot, price of homes in a county in Orgeon by year
+years <- 2005:2019
+names(years) <- years
+
+deschutes_value <- map_dfr(years, ~{
+  get_acs(
+    geography = "county",
+    variables = "B25077_001",
+    state = "OR",
+    county = "Deschutes",
+    year = .x,
+    survey = "acs1"
+  )
+}, .id = "year")
+
+ggplot(deschutes_value, aes(x = year, y = estimate, group = 1)) + 
+  geom_line() + 
+  geom_point()
+ggplot(deschutes_value, aes(x = year, y = estimate, group = 1)) + 
+  geom_ribbon(aes(ymax = estimate + moe, ymin = estimate - moe), 
+              fill = "navy",
+              alpha = 0.4) + 
+  geom_line(color = "navy") + 
+  geom_point(color = "navy", size = 2) + 
+  theme_minimal(base_size = 12) + 
+  labs(title = "Median home value in Deschutes County, OR",
+       x = "Year",
+       y = "ACS estimate",
+       caption = "Shaded area represents margin of error around the ACS estimate")
+
+#population pyramid
+utah <- get_estimates(
+  geography = "state",
+  state = "UT",
+  product = "characteristics",
+  breakdown = c("SEX", "AGEGROUP"),
+  breakdown_labels = TRUE,
+  year = 2019
+) 
+utah_filtered <- filter(utah, str_detect(AGEGROUP, "^Age"), 
+                  SEX != "Both sexes") %>%
+  mutate(value = ifelse(SEX == "Male", -value, value))
+ggplot(utah_filtered, aes(x = value, y = AGEGROUP, fill = SEX)) + 
+  geom_col()
+
+utah_pyramid <- ggplot(utah_filtered, 
+                       aes(x = value, 
+                           y = AGEGROUP, 
+                           fill = SEX)) + 
+  geom_col(width = 0.95, alpha = 0.75) + 
+  theme_minimal(base_family = "Verdana", 
+                base_size = 12) + 
+  scale_x_continuous() + 
+  scale_y_discrete(labels = ~ str_remove_all(.x, "Age\\s|\\syears")) + 
+  scale_fill_manual(values = c("darkred", "navy")) + 
+  labs(x = "", 
+       y = "2019 Census Bureau population estimate", 
+       title = "Population structure in Utah", 
+       fill = "", 
+       caption = "Data source: US Census Bureau population estimates & tidycensus R package")
+
+utah_pyramid
+
+
+#faceted plots
+housing_val <- get_acs(
+  geography = "tract", 
+  variables = "B25077_001", 
+  state = "OR", 
+  county = c(
+    "Multnomah", 
+    "Clackamas", 
+    "Washington",
+    "Yamhill", 
+    "Marion", 
+    "Columbia"
+  ),
+  year = 2020
+)
+
+housing_val2 <- separate(
+  housing_val, 
+  NAME, 
+  into = c("tract", "county", "state"), 
+  sep = ", "
+)
+
+housing_val2 %>%
+  group_by(county) %>%
+  summarize(min = min(estimate, na.rm = TRUE), 
+            mean = mean(estimate, na.rm = TRUE), 
+            median = median(estimate, na.rm = TRUE), 
+            max = max(estimate, na.rm = TRUE))
+ggplot(housing_val2, aes(x = estimate)) + 
+  geom_density()
+ggplot(housing_val2, aes(x = estimate, fill = county)) + 
+  geom_density(alpha = 0.3)
+ggplot(housing_val2, aes(x = estimate)) +
+  geom_density(fill = "darkgreen", color = "darkgreen", alpha = 0.5) + 
+  facet_wrap(~county) + 
+  scale_x_continuous() + 
+  theme_minimal(base_size = 14) + 
+  theme(axis.text.y = element_blank(), 
+        axis.text.x = element_text(angle = 45)) + 
+  labs(x = "ACS estimate",
+       y = "",
+       title = "Median home values by Census tract, 2015-2019 ACS")
+library(ggridges)
+
+ggplot(housing_val2, aes(x = estimate, y = county)) + 
+  geom_density_ridges() + 
+  theme_ridges() + 
+  labs(x = "Median home value: 2016-2020 ACS estimate", 
+       y = "") + 
+  scale_x_continuous(),
+                     breaks = c(0, 500000, 1000000)) + 
+  theme(axis.text.x = element_text(angle = 45))
+
+ny_race_income <- get_acs(
+  geography = "tract", 
+  state = "NY",  
+  county = c("New York", "Bronx", "Queens", "Richmond", "Kings"),
+  variables = c(White = "B03002_003", 
+                Black = "B03002_004", 
+                Asian = "B03002_006",
+                Hispanic = "B03002_012"), 
+  summary_var = "B19013_001",
+  year = 2020
+) %>%
+  group_by(GEOID) %>%
+  filter(estimate == max(estimate, na.rm = TRUE)) %>%
+  ungroup() %>%
+  filter(estimate != 0)
+
+ggplot(ny_race_income, aes(x = variable, y = summary_est, color = summary_est)) +
+  geom_quasirandom(alpha = 0.5) + 
+  coord_flip() + 
+  theme_minimal(base_size = 13) + 
+  scale_color_viridis_c(guide = "none") + 
+  scale_y_continuous(labels = label_dollar()) + 
+  labs(x = "Largest group in Census tract", 
+       y = "Median household income", 
+       title = "Household income distribution by largest racial/ethnic group", 
+       subtitle = "Census tracts, New York City", 
+       caption = "Data source: 2016-2020 ACS")
+ggplotly(utah_pyramid)
+```
+#exercises
+```{r}
+
+#gets med income of the top 20 most populous metro areas
+
+metroinc <-  get_acs(
+  geography = "cbsa",
+  variables = "B19013_001",summary_var = "B01003_001",
+  survey = "acs1",
+  year = 2019
+)%>%
+  slice_max(summary_est, n = 20)
+
+ggplot(metroinc, aes(x = NAME, y = estimate)) + 
+  geom_col()
+
+metroinc %>%
+  mutate(NAME = str_remove(NAME, "-,.*$")) %>%
+  mutate(NAME = str_remove(NAME, ",.*$"))%>%
+
+  ggplot(aes(y = reorder(NAME, estimate), x = estimate)) + 
+  geom_point() +  
+  theme_minimal() +geom_errorbarh(aes(xmin = estimate - moe, xmax = estimate + moe)) + 
+  geom_point(size = 3, color = "darkgreen") + 
+  theme_minimal(base_size = 12.5)+ 
+  labs(title = "Median Income in Top 20 Major Metro Areas", 
+       subtitle = "2019 1-year ACS estimates", 
+       y = "", 
+       x = "ACS estimate", 
+       caption = "Source: ACS Data Profile variable B19013_001 via the tidycensus R package") 
+
+
+```
+#exe2
+```{r}
+farva <- get_estimates(
+  geography = "county",
+  county = "Fairfax County",
+  state = "Virginia",
+  product = "characteristics",
+  breakdown = c("SEX", "AGEGROUP"),
+  breakdown_labels = TRUE,
+  year = 2019
+) 
+va_filtered <- filter(utah, str_detect(AGEGROUP, "^Age"), 
+                  SEX != "Both sexes") %>%
+  mutate(value = ifelse(SEX == "Male", -value, value))
+ggplot(va_filtered, aes(x = value, y = AGEGROUP, fill = SEX)) + 
+  geom_col()
+
+vapyramid <- ggplot(va_filtered, 
+                       aes(x = value, 
+                           y = AGEGROUP, 
+                           fill = SEX)) + 
+  geom_col(width = 0.95, alpha = 0.75) + 
+  theme_minimal(base_family = "Verdana", 
+                base_size = 12) + 
+  scale_x_continuous() + 
+  scale_y_discrete(labels = ~ str_remove_all(.x, "Age\\s|\\syears")) + 
+  scale_fill_manual(values = c("green", "purple")) + 
+  labs(x = "", 
+       y = "2019 Census Bureau population estimate", 
+       title = "Population structure in Fairfax County VA", 
+       fill = "", 
+       caption = "Data source: US Census Bureau population estimates & tidycensus R package")
+
+vapyramid
+
+
+
+```

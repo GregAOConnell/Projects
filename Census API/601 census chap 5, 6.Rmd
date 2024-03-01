@@ -1,0 +1,254 @@
+---
+title: "census chap 5"
+output: html_document
+date: "2023-11-08"
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(tidycensus)
+library(tigris)
+library(tmap)
+
+```
+#chap 5 examples
+```{r}
+#looking at borders and boundaries in tigris
+st <- states()
+plot(st$geometry)
+nm_counties <- counties("NM")
+plot(nm_counties$geometry)
+la_tracts <- tracts("NM", "Los Alamos")
+
+plot(la_tracts$geometry)
+la_water <- area_water("NM", "Los Alamos")
+
+plot(la_water$geometry)
+
+dc_landmarks <- landmarks("DC", type = "point")
+
+plot(dc_landmarks$geometry)
+
+dc_roads <- primary_secondary_roads("DC")
+
+plot(dc_roads$geometry)
+dc_block_groups <- block_groups("DC")
+
+plot(dc_block_groups$geometry)
+```
+
+```{r}
+library(plotly)
+install.packages("mapview")
+install.packages("sf")
+library(mapview)
+coast <- coastline(year = 2019)
+plot(md_coast$geometry)
+
+md_cong <- congressional_districts(year=2019, "MD")
+plot(md_cong$geometry)
+mdmap <- ggplot(md_cong)+geom_sf()
+mapview(md_cong)
+install.packages("crsuggest")
+
+library(crsuggest)
+fl_counties <- counties("FL", cb = TRUE)
+library(sf)
+#using coordinate reference systems
+#accounts for earth's shape and not using the basic mercator projection
+
+#FL example
+st_crs(fl_counties)
+fl_crs <- suggest_crs(fl_counties)
+fl_crs
+
+#exe 2 VA crs
+va_counties <- counties("VA", cb=T)
+st_crs(va_counties)
+va_crs <- suggest_crs(va_counties)
+
+
+va_projected <- st_transform(va_counties, crs = 6591)
+head(va_projected)
+st_crs(va_projected)
+
+#plotting
+options(scipen = 999)
+
+ggplot(va_counties) + 
+  geom_sf() + 
+  coord_sf(crs = 6591, datum= 6591)
+```
+
+#chap 6
+
+```{r}
+#basic plot of DC income by tract
+options(tigris_use_cache = TRUE)
+dc_income <- get_acs(
+  geography = "tract", 
+  variables = "B19013_001",
+  state = "DC", 
+  year = 2020,
+  geometry = TRUE
+)
+
+dc_income
+plot(dc_income["estimate"])
+
+#chloropleth map of median age in the U.S.
+
+us_median_age <- get_acs(
+  geography = "state",
+  variables = "B01002_001",
+  year = 2019,
+  survey = "acs1",
+  geometry = TRUE,
+  resolution = "20m"
+) %>%
+  shift_geometry()
+
+plot(us_median_age$geometry)
+
+ggplot(data = us_median_age, aes(fill = estimate)) + 
+  geom_sf()
+
+#better labeled chlorpleth map with more features
+ggplot(data = us_median_age, aes(fill = estimate)) + 
+  geom_sf() + 
+  scale_fill_distiller(palette = "RdPu", 
+                       direction = 1) + 
+  labs(title = "  Median Age by State, 2019",
+       caption = "Data source: 2019 1-year ACS, US Census Bureau",
+       fill = "ACS estimate") + 
+  theme_void()
+
+#percent of black people by census tract in Hennepin County MN
+#steps are to find percent first, then make a blank map with your variable
+#afterwards fill it and label it
+hennepin_race <- get_decennial(
+  geography = "tract",
+  state = "MN",
+  county = "Hennepin",
+  variables = c(
+    Hispanic = "P2_002N",
+    White = "P2_005N",
+    Black = "P2_006N",
+    Native = "P2_007N",
+    Asian = "P2_008N"
+  ),
+  summary_var = "P2_001N",
+  year = 2020,
+  geometry = TRUE
+) %>%
+  mutate(percent = 100 * (value / summary_value))
+install.packages("tmap")
+library(tmap)
+hennepin_black <- filter(hennepin_race, 
+                         variable == "Black")
+
+tm_shape(hennepin_black) + 
+  tm_polygons()
+tm_shape(hennepin_black) + 
+  tm_polygons(col = "percent")
+  tm_shape(hennepin_black) + 
+  tm_polygons(col = "percent",
+          style = "quantile",
+          n = 5,
+          palette = "Purples",
+          title = "2020 US Census") + 
+  tm_layout(title = "Percent Black\nby Census tract",
+            frame = FALSE,
+            legend.outside = TRUE)
+
+  
+  #you can even stick a histogram next to it and give it a background color
+  
+    tm_shape(hennepin_black) + 
+  tm_polygons(col = "percent",
+          style = "jenks",
+          n = 5,
+          palette = "Purples",
+          title = "2020 US Census",
+          legend.hist = TRUE) + 
+  tm_layout(title = "Percent Black\nby Census tract",
+            frame = FALSE,
+            legend.outside = TRUE,
+            bg.color = "grey70",
+            legend.hist.width = 5,
+            fontfamily = "Verdana")
+    
+    #leaflet interactive maps
+    library(leaflet)
+    dallas_bachelors <- get_acs(
+  geography = "tract",
+  variables = "DP02_0068P",
+  year = 2020,
+  state = "TX",
+  county = "Dallas",
+  geometry = TRUE)
+  library(mapview)
+    
+mapview(dallas_bachelors, zcol = "estimate")
+
+#you can make tmaps interactive with leaflet too
+tmap_mode("view")
+
+tm_shape(dallas_bachelors) + 
+  tm_fill(col = "estimate", palette = "magma",
+          alpha = 0.5)
+```
+
+```{R}
+#EXE2
+fairfaxrace <- get_decennial(
+  geography = "tract",
+  state = "VA",
+  county = "Fairfax County",
+  variables = c(
+    Hispanic = "P2_002N",
+    White = "P2_005N",
+    Black = "P2_006N",
+    Native = "P2_007N",
+    Asian = "P2_008N"
+  ),
+  summary_var = "P2_001N",
+  year = 2020,
+  geometry = TRUE
+) %>%
+  mutate(percent = 100 * (value / summary_value))
+
+
+fairfax_asian <- filter(fairfaxrace, 
+                         variable == "Asian")
+
+tm_shape(fairfax_asian) + 
+  tm_polygons()
+
+tm_shape(fairfax_asian) + 
+  tm_polygons(col = "percent")
+
+tm_shape(fairfax_asian) + 
+  tm_polygons(col = "percent",
+          style = "quantile",
+          n = 5,
+          palette = "Purples",
+          title = "2020 US Census") + 
+  tm_layout(title = "Percent Asian\nby Census tract",
+            frame = FALSE,
+            legend.outside = TRUE)
+```
+
+```{R}
+usmedinc <-get_acs(
+  variable="B19013_001",
+  geography = "state",
+  year = 2019,
+  survey = "acs1",
+  geometry = TRUE,
+  resolution = "20m"
+) %>%
+  shift_geometry()
+
+
+  ```
