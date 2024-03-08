@@ -7,4 +7,5 @@ First the articles were scraped for body text, stuck in a excel sheet, and descr
 Then with LDAvis package, an intertopic distance map was created for each conflict.
 Finally, sentences containing the names of the leaders were isolated, sentiment analysis was performed with the bing dictionary, and results were tested for significance and modeled.
 
-## Findings will be detailed in the pdf attached
+## Findings
+Attached is a PDF with a more detailed explanation of graphs, methodolgy, and findings. Thanks for stopping by and feel free to email me with any questions at greg.oconnell.work@gmail.com
